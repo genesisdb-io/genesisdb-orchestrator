@@ -65,7 +65,7 @@ release:
   draft: false
   prerelease: auto
   header: |
-    ## GenesisDB local orchestrator {{ .Tag }}
+    ## GenesisDB orchestrator {{ .Tag }}
 
     Install on macOS or Linux:
 
