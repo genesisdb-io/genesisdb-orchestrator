@@ -26,6 +26,7 @@ archives:
     files:
       - LICENSE
       - README.md
+      - install.sh
     formats: [tar.gz]
     format_overrides:
       - goos: windows
@@ -66,5 +67,10 @@ release:
   header: |
     ## GenesisDB local orchestrator {{ .Tag }}
 
-    Download the archive for your operating system and architecture below,
-    extract `genesisdb`, and place it on your `PATH`.
+    Install on macOS or Linux:
+
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/genesisdb-io/genesisdb-orchestrator/main/install.sh | bash
+    ```
+
+    Or download an archive below, extract `genesisdb`, and place it on your `PATH`.

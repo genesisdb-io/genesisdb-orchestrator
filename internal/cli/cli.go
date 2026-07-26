@@ -2,13 +2,16 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/genesisdb-io/genesisdb-orchestrator/internal/orchestrator"
+	"github.com/genesisdb-io/genesisdb-orchestrator/internal/updater"
 	"golang.org/x/term"
 )
 
@@ -24,6 +27,7 @@ Usage:
   genesisdb create <name> --auth-token <token> [--license-key <key>]
   genesisdb stop <name>
   genesisdb delete <name>
+  genesisdb update [--check]
   genesisdb version
 
 Commands:
@@ -32,6 +36,7 @@ Commands:
   create    Create an instance interactively or with command-line options
   stop      Stop an instance without deleting its data
   delete    Delete an instance and its data permanently
+  update    Check for or install the latest GenesisDB CLI release
   version   Print the application version
 `
 )
@@ -43,6 +48,24 @@ func Run(args []string, version string) error {
 		return nil
 	}
 
+	var updateResult <-chan updater.Info
+	switch args[0] {
+	case "init", "shutdown", "create", "stop", "delete":
+		updateResult = updater.CheckAsync(version)
+	}
+	defer func() {
+		if updateResult == nil {
+			return
+		}
+		select {
+		case info, ok := <-updateResult:
+			if ok && info.Available {
+				printUpdateNotice(info)
+			}
+		default:
+		}
+	}()
+
 	switch args[0] {
 	case "help", "-h", "--help":
 		fmt.Print(styledUsage(os.Stdout))
@@ -50,6 +73,8 @@ func Run(args []string, version string) error {
 	case "version", "--version":
 		fmt.Println(version)
 		return nil
+	case "update":
+		return runUpdate(args[1:], version)
 	case "init":
 		if len(args) != 1 {
 			return errors.New("init takes no arguments")
@@ -85,6 +110,54 @@ func Run(args []string, version string) error {
 	default:
 		return fmt.Errorf("unknown command %q\n\n%s", args[0], styledUsage(os.Stderr))
 	}
+}
+
+func runUpdate(args []string, version string) error {
+	if len(args) > 1 {
+		return errors.New("usage: genesisdb update [--check]")
+	}
+	if len(args) == 1 {
+		switch args[0] {
+		case "-h", "--help", "help":
+			fmt.Print(`GenesisDB self-update
+
+Usage:
+  genesisdb update           Download and install the latest release
+  genesisdb update --check   Check for a newer release without installing it
+`)
+			return nil
+		case "--check":
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			info, err := updater.Check(ctx, version, false)
+			if err != nil {
+				return fmt.Errorf("check for update: %w", err)
+			}
+			if info.Current == "" || info.Current == "dev" || info.Current == "0.0.0" {
+				fmt.Println("GenesisDB development build 0.0.0 cannot self-update.")
+				return nil
+			}
+			if !info.Available {
+				fmt.Printf("GenesisDB %s is up to date.\n", info.Current)
+				return nil
+			}
+			fmt.Printf("GenesisDB %s -> %s is available.\nRelease: %s\nRun `genesisdb update` to install it.\n", info.Current, info.Latest, info.URL)
+			return nil
+		default:
+			return fmt.Errorf("unknown update option %q", args[0])
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	return updater.Install(ctx, version, os.Stdout)
+}
+
+func printUpdateNotice(info updater.Info) {
+	title := "Update available"
+	if colorEnabled(os.Stderr) {
+		title = brandColor + title + colorReset
+	}
+	fmt.Fprintf(os.Stderr, "%s: GenesisDB %s -> %s. Run `genesisdb update`.\n", title, info.Current, info.Latest)
 }
 
 func styledUsage(output *os.File) string {

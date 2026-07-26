@@ -17,9 +17,19 @@ The GenesisDB container itself listens on its standard port 8080 inside a privat
 
 ## Installation
 
-Download the archive for your operating system and architecture from the [latest GitHub release](https://github.com/genesisdb-io/genesisdb-orchestrator/releases/latest), extract it, and place the `genesisdb` binary on your `PATH`. Windows archives contain `genesisdb.exe`.
+Install the latest release on macOS or Linux:
 
-Release archives are available for macOS, Linux, and Windows on AMD64 and ARM64. Verify downloads with the accompanying `checksums.txt` file.
+```sh
+curl -fsSL https://raw.githubusercontent.com/genesisdb-io/genesisdb-orchestrator/main/install.sh | bash
+```
+
+The installer detects the operating system and architecture, verifies the release checksum, and installs into the first writable directory among `/usr/local/bin`, `~/.local/bin`, and `~/bin`. Pass a release tag and destination to override the defaults:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/genesisdb-io/genesisdb-orchestrator/main/install.sh | bash -s -- v0.0.2 ~/bin
+```
+
+Alternatively, download an archive from the [latest GitHub release](https://github.com/genesisdb-io/genesisdb-orchestrator/releases/latest). Release archives are available for macOS, Linux, and Windows on AMD64 and ARM64. Windows archives contain `genesisdb.exe`.
 
 ## Project structure
 
@@ -27,6 +37,7 @@ Release archives are available for macOS, Linux, and Windows on AMD64 and ARM64.
 cmd/genesisdb/          Application entry point and build version
 internal/cli/           Command parsing, terminal output, and wizard
 internal/orchestrator/  Docker lifecycle, proxy, certificates, and OS integration
+internal/updater/       Release checks, checksum validation, and self-update
 ```
 
 The entry point only handles process exit behavior. CLI concerns and orchestration logic remain independently testable in internal packages.
@@ -87,6 +98,19 @@ genesisdb init
 ```
 
 `delete` removes the container, its named data volume, proxy route, and hosts-file entry. `shutdown` preserves containers and data. Creating, stopping, and deleting instances refuse to run while the proxy is not initialized and running.
+
+## Updates
+
+Check for or install a new CLI release:
+
+```sh
+genesisdb update --check
+genesisdb update
+```
+
+Published builds automatically check GitHub at most once every 12 hours when running lifecycle commands. If a newer release exists, the CLI prints a short notice. Network failures never prevent normal GenesisDB commands from running. Local development builds report version `0.0.0` and cannot self-update.
+
+The updater verifies the selected release archive against `checksums.txt` before replacing the current executable. The executable must be writable by the current user.
 
 ## Docker resources
 
