@@ -1,0 +1,77 @@
+name: release
+
+# Every successful CI run on main creates a patch release. The workflow
+# starts at v0.0.1, rolls 0.0.99 over to 0.1.0, tags the exact commit CI
+# tested, and uses GoReleaser to publish archives and checksums.
+# Add [release=skip] to the commit message to suppress a release.
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && !contains(github.event.workflow_run.head_commit.message, '[release=skip]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: compute next version
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n1)
+          if [ -z "$latest" ]; then
+            latest="v0.0.0"
+          fi
+          echo "latest tag: $latest"
+
+          ver="${latest#v}"
+          IFS=. read -r major minor patch <<<"$ver"
+          if [ "$patch" -ge 99 ]; then
+            minor=$((minor + 1))
+            patch=0
+          else
+            patch=$((patch + 1))
+          fi
+          next="v${major}.${minor}.${patch}"
+          echo "next tag:   $next"
+
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+          echo "version=${next#v}" >> "$GITHUB_OUTPUT"
+
+      - name: create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.bump.outputs.next }}" \
+            -m "release ${{ steps.bump.outputs.next }}"
+          git push origin "${{ steps.bump.outputs.next }}"
+
+      - name: set up go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: run goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

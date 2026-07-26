@@ -1,0 +1,5 @@
+bin/
+dist/
+genesisdb
+*.exe
+.DS_Store
