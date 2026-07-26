@@ -1,5 +1,5 @@
 bin/
 dist/
-genesisdb
+/genesisdb
 *.exe
 .DS_Store

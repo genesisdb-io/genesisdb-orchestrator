@@ -27,6 +27,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: build CLI
+        run: go build ./cmd/genesisdb
+
       - name: go vet
         run: go vet ./...
 
