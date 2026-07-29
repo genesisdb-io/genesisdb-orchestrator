@@ -36,7 +36,8 @@ Alternatively, download an archive from the [latest GitHub release](https://gith
 ```text
 cmd/genesisdb/          Application entry point and build version
 internal/cli/           Command parsing, terminal output, and wizard
-internal/orchestrator/  Docker lifecycle, proxy, certificates, and OS integration
+internal/orchestrator/  Docker lifecycle, API, backups, certificates, and OS integration
+internal/ui/            Bubble Tea database dashboard
 internal/updater/       Release checks, checksum validation, and self-update
 ```
 
@@ -55,6 +56,27 @@ make release VERSION=1.0.0
 ```
 
 Local builds default to version `0.0.0`. Published builds receive their version from the Git tag through GoReleaser.
+
+## Dashboard
+
+Run `genesisdb` without arguments in a terminal to open the interactive dashboard (`genesisdb ui` still works as an alias):
+
+```sh
+genesisdb
+```
+
+The dashboard lists running and stopped databases and refreshes automatically. Select an instance with the arrow keys or `j` and `k`. Available actions:
+
+- `c`: create a database with name, visible auth token, and optional license fields
+- `s`: start or stop the selected database
+- `p`: initialize everything or shut down all databases and the proxy
+- `e`: export a JSON backup through `GET /api/v1/backup/create`
+- `i`: restore a JSON backup through `POST /api/v1/backup/restore`
+- `d`: permanently delete the database after confirmation
+- `r`: refresh containers and `GET /api/v1/status` data
+- `q`: close the dashboard
+
+The details panel displays engine, event store, system, storage, memory, CPU, and license information from `/api/v1/status`. Backup restore only works with an empty target event store, as required by GenesisDB.
 
 ## Usage
 

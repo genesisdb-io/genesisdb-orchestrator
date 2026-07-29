@@ -1,6 +1,9 @@
 package orchestrator
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestValidateName(t *testing.T) {
 	valid := []string{"dev", "dev-1", "a", "a1"}
@@ -15,6 +18,22 @@ func TestValidateName(t *testing.T) {
 		if err := ValidateName(name); err == nil {
 			t.Errorf("%q should be invalid", name)
 		}
+	}
+}
+
+func TestStatusJSON(t *testing.T) {
+	payload := []byte(`{
+		"engine":{"version":"1.2.3","edition":"enterprise","channel":"stable"},
+		"system":{"os":"linux","arch":"arm64","cpu":{"availableCores":8,"usedCores":2},"memory":{"total":100,"used":40,"available":60},"storage":{"max":1000,"used":300,"available":700}},
+		"license":{"status":"valid","validUntil":"2027-01-01"},
+		"events":{"count":42,"subjects":7,"types":3,"storageSize":2048}
+	}`)
+	var status Status
+	if err := json.Unmarshal(payload, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Engine.Version != "1.2.3" || status.Events.Count != 42 || status.System.Storage.Max != 1000 {
+		t.Fatalf("unexpected status: %#v", status)
 	}
 }
 

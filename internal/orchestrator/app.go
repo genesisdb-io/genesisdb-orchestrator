@@ -241,21 +241,7 @@ func (a *Orchestrator) removeInstanceResources(name string) {
 
 // Stop stops one GenesisDB instance.
 func (a *Orchestrator) Stop(name string) error {
-	if err := requireProxy(); err != nil {
-		return err
-	}
-	exists, running, err := containerState(instanceContainer(name))
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return fmt.Errorf("instance %q does not exist", name)
-	}
-	if !running {
-		fmt.Printf("Instance %q is already stopped\n", name)
-		return nil
-	}
-	if _, err := docker("stop", instanceContainer(name)); err != nil {
+	if err := a.StopInstance(name); err != nil {
 		return err
 	}
 	fmt.Printf("Stopped %q\n", name)
@@ -264,31 +250,8 @@ func (a *Orchestrator) Stop(name string) error {
 
 // Delete removes one GenesisDB instance and its data.
 func (a *Orchestrator) Delete(name string) error {
-	if err := requireProxy(); err != nil {
+	if err := a.DeleteInstance(name); err != nil {
 		return err
-	}
-	exists, _, err := containerState(instanceContainer(name))
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return fmt.Errorf("instance %q does not exist", name)
-	}
-	if _, err := docker("rm", "-f", "-v", instanceContainer(name)); err != nil {
-		return fmt.Errorf("delete container: %w", err)
-	}
-	// Docker's -v only removes anonymous volumes, so remove the named data volume explicitly.
-	if _, err := docker("volume", "rm", instanceVolume(name)); err != nil {
-		return fmt.Errorf("delete data volume: %w", err)
-	}
-	if err := os.Remove(a.sitePath(name)); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if err := a.reloadProxy(); err != nil {
-		return err
-	}
-	if err := updateHost(name+".genesisdb.local", false); err != nil {
-		return fmt.Errorf("instance deleted, but hosts-file cleanup failed: %w", err)
 	}
 	fmt.Printf("Deleted %q and its data\n", name)
 	return nil

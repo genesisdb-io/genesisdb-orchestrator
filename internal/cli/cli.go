@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/genesisdb-io/genesisdb-orchestrator/internal/orchestrator"
+	"github.com/genesisdb-io/genesisdb-orchestrator/internal/ui"
 	"github.com/genesisdb-io/genesisdb-orchestrator/internal/updater"
 	"golang.org/x/term"
 )
@@ -21,6 +22,7 @@ const (
 	usage      = `GenesisDB orchestrator
 
 Usage:
+  genesisdb                 Open the interactive dashboard
   genesisdb init
   genesisdb shutdown
   genesisdb create
@@ -44,13 +46,16 @@ Commands:
 // Run executes the GenesisDB CLI with the supplied arguments and build version.
 func Run(args []string, version string) error {
 	if len(args) == 0 {
+		if term.IsTerminal(int(os.Stdout.Fd())) {
+			return ui.Run()
+		}
 		fmt.Print(styledUsage(os.Stdout))
 		return nil
 	}
 
 	var updateResult <-chan updater.Info
 	switch args[0] {
-	case "init", "shutdown", "create", "stop", "delete":
+	case "init", "shutdown", "ui", "create", "stop", "delete":
 		updateResult = updater.CheckAsync(version)
 	}
 	defer func() {
@@ -75,6 +80,11 @@ func Run(args []string, version string) error {
 		return nil
 	case "update":
 		return runUpdate(args[1:], version)
+	case "ui", "dashboard":
+		if len(args) != 1 {
+			return errors.New("ui takes no arguments")
+		}
+		return ui.Run()
 	case "init":
 		if len(args) != 1 {
 			return errors.New("init takes no arguments")
