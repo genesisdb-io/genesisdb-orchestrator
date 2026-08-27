@@ -3,8 +3,8 @@
 # GenesisDB orchestrator installer.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/genesisdb-io/genesisdb-orchestrator/main/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/genesisdb-io/genesisdb-orchestrator/main/install.sh | bash -s -- v0.0.2 ~/bin
+#   curl -fsSL https://orchestrator.genesisdb.io/install.sh | bash
+#   curl -fsSL https://orchestrator.genesisdb.io/install.sh | bash -s -- v0.0.2 ~/bin
 #
 # Positional arguments:
 #   $1  Release tag, for example v0.0.2. Defaults to latest.

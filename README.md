@@ -22,13 +22,13 @@ The GenesisDB container itself listens on its standard port 8080 inside a privat
 Install the latest release on macOS or Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/genesisdb-io/genesisdb-orchestrator/main/install.sh | bash
+curl -fsSL https://orchestrator.genesisdb.io/install.sh | bash
 ```
 
 The installer detects the operating system and architecture, verifies the release checksum, and installs into the first writable directory among `/usr/local/bin`, `~/.local/bin`, and `~/bin`. Pass a release tag and destination to override the defaults:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/genesisdb-io/genesisdb-orchestrator/main/install.sh | bash -s -- v0.0.2 ~/bin
+curl -fsSL https://orchestrator.genesisdb.io/install.sh | bash -s -- v0.0.2 ~/bin
 ```
 
 Alternatively, download an archive from the [latest GitHub release](https://github.com/genesisdb-io/genesisdb-orchestrator/releases/latest). Release archives are available for macOS, Linux, and Windows on AMD64 and ARM64. Windows archives contain `genesisdb.exe`.
@@ -142,6 +142,12 @@ Check for or install a new CLI release:
 ```sh
 genesisdb update --check
 genesisdb update
+```
+
+You can also install or update to the latest release by running the stable installer again:
+
+```sh
+curl -fsSL https://orchestrator.genesisdb.io/install.sh | bash
 ```
 
 Published builds automatically check GitHub at most once every 12 hours when running lifecycle commands. If a newer release exists, the CLI prints a short notice. Network failures never prevent normal GenesisDB commands from running. Local development builds report version `0.0.0` and cannot self-update.

@@ -70,7 +70,7 @@ release:
     Install on macOS or Linux:
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/genesisdb-io/genesisdb-orchestrator/main/install.sh | bash
+    curl -fsSL https://orchestrator.genesisdb.io/install.sh | bash
     ```
 
     Or download an archive below, extract `genesisdb`, and place it on your `PATH`.
