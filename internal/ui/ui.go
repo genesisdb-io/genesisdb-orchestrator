@@ -51,24 +51,25 @@ const (
 )
 
 type model struct {
-	app          *orchestrator.Orchestrator
-	instances    []orchestrator.Instance
-	selected     int
-	proxy        bool
-	status       orchestrator.Status
-	statusFor    string
-	statusErr    error
-	loading      bool
-	busy         bool
-	mode         mode
-	input        textinput.Model
-	createInputs []textinput.Model
-	createFocus  int
-	spinner      spinner.Model
-	message      string
-	err          error
-	width        int
-	height       int
+	app               *orchestrator.Orchestrator
+	instances         []orchestrator.Instance
+	selected          int
+	proxy             bool
+	status            orchestrator.Status
+	statusFor         string
+	statusErr         error
+	loading           bool
+	busy              bool
+	autoInitAttempted bool
+	mode              mode
+	input             textinput.Model
+	createInputs      []textinput.Model
+	createFocus       int
+	spinner           spinner.Model
+	message           string
+	err               error
+	width             int
+	height            int
 }
 
 type instancesMsg struct {
@@ -124,16 +125,31 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 	case refreshMsg:
+		if m.busy || m.mode != modeNormal || m.loading {
+			return m, scheduleRefresh()
+		}
+		m.loading = true
 		return m, tea.Batch(m.loadInstances(), scheduleRefresh())
 	case instancesMsg:
 		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
 		m.proxy = msg.proxy
-		m.err = msg.err
 		previous := m.selectedName()
 		m.instances = msg.instances
 		m.selected = indexByName(m.instances, previous)
 		if m.selected >= len(m.instances) {
 			m.selected = max(0, len(m.instances)-1)
+		}
+		if !m.autoInitAttempted {
+			m.autoInitAttempted = true
+			if !m.proxy {
+				m.busy = true
+				m.message, m.err = "", nil
+				return m, proxyProcess(false)
+			}
 		}
 		return m, m.loadSelectedStatus()
 	case statusMsg:
@@ -343,10 +359,10 @@ func (m *model) View() string {
 		return "loading GenesisDB orchestrator..."
 	}
 	if m.mode != modeNormal {
-		return fit(m.renderOverlay(), m.height)
+		return fit(m.renderOverlay(), m.width, m.height)
 	}
 	if m.width < 72 || m.height < 20 {
-		return fit(m.renderCompact(), m.height)
+		return fit(m.renderCompact(), m.width, m.height)
 	}
 
 	leftWidth, rightWidth, bodyHeight := m.layout()
@@ -355,7 +371,7 @@ func (m *model) View() string {
 	left := panel.Width(max(10, leftWidth-2)).Render(limitLines(m.renderDatabases(leftWidth-6, bodyHeight-4), contentHeight))
 	right := panel.Width(max(10, rightWidth-2)).Render(limitLines(m.renderDetails(rightWidth-6), contentHeight))
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
-	return fit(lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter()), m.height)
+	return fit(lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter()), m.width, m.height)
 }
 
 func (m *model) layout() (leftWidth, rightWidth, bodyHeight int) {
@@ -607,8 +623,8 @@ func (m *model) renderCompact() string {
 }
 
 func (m *model) renderOverlay() string {
-	width := max(30, min(66, m.width-8))
-	inner := width - 4
+	width := max(1, min(66, m.width-4))
+	inner := max(1, width-4)
 	borderColor := purple
 	var lines []string
 	switch m.mode {
@@ -911,12 +927,18 @@ func clamp(value string, width int) string {
 	return lipgloss.NewStyle().MaxWidth(max(1, width)).Render(value)
 }
 
-func fit(view string, height int) string {
+func fit(view string, width, height int) string {
+	width, height = max(1, width), max(1, height)
 	lines := strings.Split(view, "\n")
 	for len(lines) < height {
 		lines = append(lines, "")
 	}
-	return strings.Join(lines[:max(1, height)], "\n")
+	lines = lines[:height]
+	for index, line := range lines {
+		line = clamp(line, width)
+		lines[index] = line + strings.Repeat(" ", max(0, width-lipgloss.Width(line)))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func limitLines(content string, limit int) string {

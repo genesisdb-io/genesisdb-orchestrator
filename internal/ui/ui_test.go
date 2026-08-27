@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -129,6 +130,42 @@ func TestCreateKeyOpensWizard(t *testing.T) {
 	_, cmd = m.handleCreateKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.mode != modeNormal || !m.busy || cmd == nil {
 		t.Fatalf("create wizard did not submit: mode=%v busy=%v cmd=%v", m.mode, m.busy, cmd)
+	}
+}
+
+func TestBackgroundRefreshPausesDuringDialogs(t *testing.T) {
+	m := &model{mode: modeCreate}
+	_, cmd := m.Update(refreshMsg{})
+	if m.loading {
+		t.Fatal("background refresh started while a dialog was open")
+	}
+	if cmd == nil {
+		t.Fatal("next background refresh was not scheduled")
+	}
+}
+
+func TestDashboardAutomaticallyInitializesStoppedProxy(t *testing.T) {
+	m := &model{}
+	_, cmd := m.Update(instancesMsg{})
+	if !m.autoInitAttempted || !m.busy || cmd == nil {
+		t.Fatalf("automatic initialization did not start: attempted=%v busy=%v cmd=%v", m.autoInitAttempted, m.busy, cmd)
+	}
+}
+
+func TestDashboardDoesNotRestartProxyAfterShutdown(t *testing.T) {
+	m := &model{autoInitAttempted: true}
+	_, _ = m.Update(instancesMsg{})
+	if m.busy {
+		t.Fatal("dashboard restarted proxy after the initial automatic initialization")
+	}
+}
+
+func TestSuccessfulRefreshDoesNotClearActionError(t *testing.T) {
+	original := fmt.Errorf("action failed")
+	m := &model{err: original, autoInitAttempted: true}
+	_, _ = m.Update(instancesMsg{})
+	if m.err != original {
+		t.Fatalf("refresh replaced action error with %v", m.err)
 	}
 }
 

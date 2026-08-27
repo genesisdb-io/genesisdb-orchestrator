@@ -5,7 +5,9 @@ A small cross-platform CLI for running isolated GenesisDB Docker containers behi
 Each instance is available at both:
 
 - `https://<name>.genesisdb.local` on port 443
-- `http://<name>.genesisdb.local` on port 80, redirected to HTTPS
+- `http://<name>.genesisdb.local` on port 80
+
+HTTPS is recommended for browsers and applications that use the operating system trust store. The HTTP endpoint exists for local development tools whose embedded Node.js runtime does not use the operating system trust store.
 
 The GenesisDB container itself listens on its standard port 8080 inside a private Docker network. Instance data is stored in a named Docker volume.
 
@@ -65,7 +67,7 @@ Run `genesisdb` without arguments in a terminal to open the interactive dashboar
 genesisdb
 ```
 
-The dashboard lists running and stopped databases and refreshes automatically. Select an instance with the arrow keys or `j` and `k`. Available actions:
+The dashboard initializes the local proxy and starts existing databases automatically when it opens. Administrator access is requested when certificate or hosts-file setup requires it. It then lists running and stopped databases and refreshes automatically. Select an instance with the arrow keys or `j` and `k`. Available actions:
 
 - `c`: create a database with name, visible auth token, and optional license fields
 - `s`: start or stop the selected database
@@ -77,6 +79,8 @@ The dashboard lists running and stopped databases and refreshes automatically. S
 - `q`: close the dashboard
 
 The details panel displays engine, event store, system, storage, memory, CPU, and license information from `/api/v1/status`. Backup restore only works with an empty target event store, as required by GenesisDB.
+
+The dashboard keeps a fixed terminal-sized canvas and pauses automatic Docker polling while a dialog or lifecycle operation is active. This avoids redraw jitter and prevents background refreshes from replacing action or validation errors.
 
 ## Usage
 
@@ -120,6 +124,16 @@ genesisdb init
 ```
 
 `delete` removes the container, its named data volume, proxy route, and hosts-file entry. `shutdown` preserves containers and data. Creating, stopping, and deleting instances refuse to run while the proxy is not initialized and running.
+
+### VS Code extension
+
+For an orchestrated local instance, configure the GenesisDB VS Code extension with:
+
+```text
+http://<name>.genesisdb.local
+```
+
+The extension host performs its connection test with Node.js `fetch`. Node.js does not reliably read locally trusted certificate authorities from the macOS Keychain, so the HTTPS URL can fail with `UNABLE_TO_VERIFY_LEAF_SIGNATURE` even though browsers and the orchestrator can connect. Published GenesisDB HTTPS endpoints continue to work because their certificates use a public certificate authority.
 
 ## Updates
 

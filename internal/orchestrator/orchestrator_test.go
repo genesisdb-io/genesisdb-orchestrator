@@ -2,6 +2,9 @@ package orchestrator
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -44,5 +47,24 @@ func TestEnsureCertificates(t *testing.T) {
 	}
 	if !certificatesValid(dir+"/ca.pem", dir+"/server.pem") {
 		t.Fatal("generated certificates are not valid")
+	}
+}
+
+func TestSiteSupportsHTTPForLocalDevelopmentClients(t *testing.T) {
+	dir := t.TempDir()
+	app := &Orchestrator{sitesDir: dir}
+	if err := app.writeSite("orders"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "orders.caddy"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := string(data)
+	if !strings.Contains(config, "http://orders.genesisdb.local {\n\treverse_proxy genesisdb-local-orders:8080") {
+		t.Fatalf("HTTP route does not proxy to the instance: %s", config)
+	}
+	if strings.Contains(config, "redir https://") {
+		t.Fatalf("HTTP route unexpectedly redirects to HTTPS: %s", config)
 	}
 }
