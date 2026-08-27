@@ -1,4 +1,4 @@
-// Package ui provides the interactive GenesisDB orchestrator dashboard.
+// Package ui provides the interactive GenesisDB Orchestrator dashboard.
 package ui
 
 import (
@@ -356,7 +356,7 @@ func (m *model) handleCreateKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 // View renders the dashboard.
 func (m *model) View() string {
 	if m.width == 0 || m.height == 0 {
-		return "loading GenesisDB orchestrator..."
+		return "loading GenesisDB Orchestrator..."
 	}
 	if m.mode != modeNormal {
 		return fit(m.renderOverlay(), m.width, m.height)

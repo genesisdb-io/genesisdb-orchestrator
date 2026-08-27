@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# GenesisDB orchestrator installer.
+# GenesisDB Orchestrator installer.
 #
 # Usage:
 #   curl -fsSL https://orchestrator.genesisdb.io/install.sh | bash

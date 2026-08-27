@@ -1,4 +1,4 @@
-# GenesisDB orchestrator
+# GenesisDB Orchestrator
 
 A small cross-platform CLI for running isolated GenesisDB Docker containers behind one local HTTPS proxy.
 

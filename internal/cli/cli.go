@@ -19,7 +19,7 @@ import (
 const (
 	brandColor = "\x1b[1;38;2;0;181;212m"
 	colorReset = "\x1b[0m"
-	usage      = `GenesisDB orchestrator
+	usage      = `GenesisDB Orchestrator
 
 Usage:
   genesisdb                 Open the interactive dashboard
@@ -175,7 +175,7 @@ func styledUsage(output *os.File) string {
 		return usage
 	}
 
-	styled := strings.Replace(usage, "GenesisDB orchestrator", brandColor+"GenesisDB orchestrator"+colorReset, 1)
+	styled := strings.Replace(usage, "GenesisDB Orchestrator", brandColor+"GenesisDB Orchestrator"+colorReset, 1)
 	styled = strings.Replace(styled, "Usage:", brandColor+"Usage:"+colorReset, 1)
 	return strings.Replace(styled, "Commands:", brandColor+"Commands:"+colorReset, 1)
 }
