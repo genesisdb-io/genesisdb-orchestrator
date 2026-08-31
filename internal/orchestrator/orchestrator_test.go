@@ -50,6 +50,20 @@ func TestEnsureCertificates(t *testing.T) {
 	}
 }
 
+func TestAPIClientHasNoGlobalTimeout(t *testing.T) {
+	dir := t.TempDir()
+	if err := ensureCertificates(dir); err != nil {
+		t.Fatal(err)
+	}
+	client, err := (&Orchestrator{certsDir: dir}).apiClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.Timeout != 0 {
+		t.Fatalf("API client timeout = %s, want no global timeout", client.Timeout)
+	}
+}
+
 func TestSiteSupportsHTTPForLocalDevelopmentClients(t *testing.T) {
 	dir := t.TempDir()
 	app := &Orchestrator{sitesDir: dir}

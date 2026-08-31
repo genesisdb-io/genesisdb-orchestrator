@@ -729,9 +729,7 @@ func (m *model) importBackup(name, path string) tea.Cmd {
 	return func() tea.Msg {
 		absolute, err := filepath.Abs(expandHome(path))
 		if err == nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-			defer cancel()
-			err = m.app.ImportBackup(ctx, name, absolute)
+			err = m.app.ImportBackup(context.Background(), name, absolute)
 		}
 		return actionMsg{name: name, action: "imported", detail: absolute, err: err}
 	}

@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 )
 
 // Instance is a managed GenesisDB Docker container.
@@ -288,7 +287,6 @@ func (a *Orchestrator) apiClient() (*http.Client, error) {
 		return nil, errors.New("load local CA certificate")
 	}
 	return &http.Client{
-		Timeout: 30 * time.Second,
 		Transport: &http.Transport{TLSClientConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			RootCAs:    roots,
