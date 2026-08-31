@@ -78,7 +78,7 @@ The dashboard initializes the local proxy and starts existing databases automati
 - `r`: refresh containers and `GET /api/v1/status` data
 - `q`: close the dashboard
 
-The details panel displays engine, event store, system, storage, memory, CPU, and license information from `/api/v1/status`. Backup restore only works with an empty target event store, as required by GenesisDB. Restore requests have no client-side timeout, so large backups can run until GenesisDB completes or returns an error.
+The details panel displays engine, event store, system, storage, memory, CPU, and license information from `/api/v1/status`. Import and export path inputs suggest matching files and directories while you type. Use Tab and Shift+Tab to cycle through completions. Backup restore only works with an empty target event store, as required by GenesisDB. Restore requests have no client-side timeout, so large backups can run until GenesisDB completes or returns an error.
 
 The dashboard keeps a fixed terminal-sized canvas and pauses automatic Docker polling while a dialog or lifecycle operation is active. This avoids redraw jitter and prevents background refreshes from replacing action or validation errors.
 

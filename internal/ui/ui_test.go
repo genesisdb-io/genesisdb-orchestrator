@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -166,6 +168,49 @@ func TestSuccessfulRefreshDoesNotClearActionError(t *testing.T) {
 	_, _ = m.Update(instancesMsg{})
 	if m.err != original {
 		t.Fatalf("refresh replaced action error with %v", m.err)
+	}
+}
+
+func TestCompletePathsMatchesFilesAndDirectories(t *testing.T) {
+	if home := completePaths("~"); len(home) != 1 || home[0] != "~"+string(os.PathSeparator) {
+		t.Fatalf("home completion = %q", home)
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "backup.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "backups"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".hidden.json"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	prefix := filepath.Join(dir, "ba")
+	got := completePaths(prefix)
+	want := []string{filepath.Join(dir, "backup.json"), filepath.Join(dir, "backups") + string(os.PathSeparator)}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("completePaths(%q) = %q, want %q", prefix, got, want)
+	}
+	if hidden := completePaths(filepath.Join(dir, ".h")); len(hidden) != 1 || !strings.HasSuffix(hidden[0], ".hidden.json") {
+		t.Fatalf("hidden completion = %q", hidden)
+	}
+}
+
+func TestTabCyclesPathCompletions(t *testing.T) {
+	m := &model{input: textInputForTest(), pathCompletions: []string{"first.json", "second.json"}, pathCompletion: -1}
+	m.completePath(1)
+	if m.input.Value() != "first.json" {
+		t.Fatalf("first completion = %q", m.input.Value())
+	}
+	m.completePath(1)
+	if m.input.Value() != "second.json" {
+		t.Fatalf("second completion = %q", m.input.Value())
+	}
+	m.completePath(-1)
+	if m.input.Value() != "first.json" {
+		t.Fatalf("reverse completion = %q", m.input.Value())
 	}
 }
 

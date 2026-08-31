@@ -63,6 +63,8 @@ type model struct {
 	autoInitAttempted bool
 	mode              mode
 	input             textinput.Model
+	pathCompletions   []string
+	pathCompletion    int
 	createInputs      []textinput.Model
 	createFocus       int
 	spinner           spinner.Model
@@ -194,7 +196,14 @@ func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.mode = modeNormal
 			m.err = nil
+			m.clearPathCompletions()
 			m.input.Blur()
+			return m, nil
+		case "tab":
+			m.completePath(1)
+			return m, nil
+		case "shift+tab":
+			m.completePath(-1)
 			return m, nil
 		case "enter":
 			path := strings.TrimSpace(m.input.Value())
@@ -206,6 +215,7 @@ func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			selectedMode := m.mode
 			m.mode = modeNormal
 			m.err = nil
+			m.clearPathCompletions()
 			m.input.Blur()
 			m.busy = true
 			if selectedMode == modeImport {
@@ -215,6 +225,7 @@ func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(key)
+		m.refreshPathCompletions()
 		return m, cmd
 	}
 
@@ -291,6 +302,7 @@ func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeExport
 			m.input.SetValue(defaultBackupPath(instance.Name))
 			m.input.CursorEnd()
+			m.refreshPathCompletions()
 			return m, m.input.Focus()
 		}
 	case "i":
@@ -298,6 +310,7 @@ func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if ok && instance.Running {
 			m.mode = modeImport
 			m.input.SetValue("")
+			m.refreshPathCompletions()
 			return m, m.input.Focus()
 		}
 	case "enter":
@@ -645,18 +658,18 @@ func (m *model) renderOverlay() string {
 			dimStyle.Render(clamp("The backup is written as a JSON file.", inner)),
 			"",
 			inputView(m.input, inner),
-			"",
-			shortcut("enter", "export", green) + "  " + shortcut("esc", "cancel", muted),
 		}
+		lines = append(lines, m.renderPathCompletions(inner)...)
+		lines = append(lines, "", shortcut("tab", "complete", purple)+"  "+shortcut("enter", "export", green)+"  "+shortcut("esc", "cancel", muted))
 	case modeImport:
 		lines = []string{
 			panelTitle("import backup", m.selectedName(), inner),
 			dimStyle.Render(clamp("Restore only works into an empty event store.", inner)),
 			"",
 			inputView(m.input, inner),
-			"",
-			shortcut("enter", "import", green) + "  " + shortcut("esc", "cancel", muted),
 		}
+		lines = append(lines, m.renderPathCompletions(inner)...)
+		lines = append(lines, "", shortcut("tab", "complete", purple)+"  "+shortcut("enter", "import", green)+"  "+shortcut("esc", "cancel", muted))
 	case modeDelete:
 		borderColor = red
 		lines = []string{
@@ -832,6 +845,97 @@ func styledInput(prompt, placeholder string, limit int) textinput.Model {
 func inputView(input textinput.Model, width int) string {
 	input.Width = max(8, width-lipgloss.Width(input.Prompt)-2)
 	return clamp(input.View(), width)
+}
+
+func (m *model) refreshPathCompletions() {
+	m.pathCompletions = completePaths(m.input.Value())
+	m.pathCompletion = -1
+}
+
+func (m *model) clearPathCompletions() {
+	m.pathCompletions = nil
+	m.pathCompletion = -1
+}
+
+func (m *model) completePath(direction int) {
+	if len(m.pathCompletions) == 0 {
+		m.refreshPathCompletions()
+	}
+	if len(m.pathCompletions) == 0 {
+		return
+	}
+	if m.pathCompletion < 0 {
+		if direction < 0 {
+			m.pathCompletion = len(m.pathCompletions) - 1
+		} else {
+			m.pathCompletion = 0
+		}
+	} else {
+		m.pathCompletion = (m.pathCompletion + direction + len(m.pathCompletions)) % len(m.pathCompletions)
+	}
+	m.input.SetValue(m.pathCompletions[m.pathCompletion])
+	m.input.CursorEnd()
+}
+
+func (m *model) renderPathCompletions(width int) []string {
+	if len(m.pathCompletions) == 0 {
+		return nil
+	}
+	start := 0
+	if m.pathCompletion >= 4 {
+		start = m.pathCompletion - 3
+	}
+	end := min(len(m.pathCompletions), start+4)
+	lines := make([]string, 0, end-start)
+	for index := start; index < end; index++ {
+		prefix := "  "
+		style := dimStyle
+		if index == m.pathCompletion {
+			prefix = "› "
+			style = lipgloss.NewStyle().Foreground(accent)
+		}
+		lines = append(lines, style.Render(clamp(prefix+m.pathCompletions[index], width)))
+	}
+	return lines
+}
+
+func completePaths(value string) []string {
+	if value == "~" {
+		return []string{"~" + string(os.PathSeparator)}
+	}
+	separatorAt := strings.LastIndexAny(value, `/\\`)
+	typedDir, prefix := "", value
+	if separatorAt >= 0 {
+		typedDir = value[:separatorAt+1]
+		prefix = value[separatorAt+1:]
+	}
+	resolvedDir := "."
+	if typedDir != "" {
+		resolvedDir = expandHome(typedDir)
+	}
+	entries, err := os.ReadDir(resolvedDir)
+	if err != nil {
+		return nil
+	}
+	separator := string(os.PathSeparator)
+	if strings.HasSuffix(typedDir, `/`) {
+		separator = "/"
+	} else if strings.HasSuffix(typedDir, `\\`) {
+		separator = `\\`
+	}
+	matches := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, prefix) || (strings.HasPrefix(name, ".") && !strings.HasPrefix(prefix, ".")) {
+			continue
+		}
+		candidate := typedDir + name
+		if entry.IsDir() {
+			candidate += separator
+		}
+		matches = append(matches, candidate)
+	}
+	return matches
 }
 
 func panelTitle(title, tag string, width int) string {
