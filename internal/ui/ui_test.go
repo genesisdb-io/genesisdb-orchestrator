@@ -112,6 +112,10 @@ func TestOverlaysFitTerminal(t *testing.T) {
 func TestHeaderDoesNotWrap(t *testing.T) {
 	m := &model{proxy: false, width: 120}
 	header := m.renderHeader()
+	plain := ansi.Strip(header)
+	if !strings.Contains(plain, "GenesisDB Orchestrator") {
+		t.Fatalf("header does not use canonical product name: %q", plain)
+	}
 	if got := lipgloss.Width(header); got > 120 {
 		t.Fatalf("header width = %d, want at most 120", got)
 	}

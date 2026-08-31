@@ -400,7 +400,7 @@ func (m *model) layout() (leftWidth, rightWidth, bodyHeight int) {
 
 func (m *model) renderHeader() string {
 	inner := max(10, m.width-4)
-	left := titleStyle.Render("GenesisDB") + dimStyle.Render("  orchestrator")
+	left := titleStyle.Render("GenesisDB") + dimStyle.Render(" Orchestrator")
 	proxy := badge("proxy stopped", red)
 	if m.proxy {
 		proxy = badge("proxy running", green)
@@ -598,7 +598,7 @@ func (m *model) renderCompact() string {
 	}
 	lines := []string{
 		"",
-		"  " + clamp(titleStyle.Render("GenesisDB")+dimStyle.Render("  orchestrator"), inner),
+		"  " + clamp(titleStyle.Render("GenesisDB")+dimStyle.Render(" Orchestrator"), inner),
 		"  " + clamp(proxy+" "+badge(fmt.Sprintf("%d databases", len(m.instances)), purple), inner),
 		"",
 	}
