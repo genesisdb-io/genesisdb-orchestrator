@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/genesisdb-io/genesisdb-orchestrator/internal/orchestrator"
 )
 
@@ -50,6 +51,13 @@ const (
 	modeCreate
 )
 
+type pane int
+
+const (
+	leftPane pane = iota
+	rightPane
+)
+
 type model struct {
 	app               *orchestrator.Orchestrator
 	instances         []orchestrator.Instance
@@ -70,6 +78,9 @@ type model struct {
 	spinner           spinner.Model
 	message           string
 	err               error
+	activePane        pane
+	leftScroll        int
+	rightScroll       int
 	width             int
 	height            int
 }
@@ -108,7 +119,7 @@ func Run() error {
 		createInputs: newCreateInputs(),
 		spinner:      spin,
 		loading:      true,
-	}, tea.WithAltScreen())
+	}, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := program.Run()
 	return err
 }
@@ -176,12 +187,16 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.message += ": " + msg.detail
 			}
 		}
+		// ExecProcess releases the terminal, disabling mouse reporting. Bubble
+		// Tea does not restore that mode when the subprocess returns.
 		if msg.refresh {
-			return m, m.loadInstances()
+			return m, tea.Batch(tea.EnableMouseCellMotion, m.loadInstances())
 		}
-		return m, m.loadSelectedStatus()
+		return m, tea.Batch(tea.EnableMouseCellMotion, m.loadSelectedStatus())
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	case tea.MouseMsg:
+		return m.handleMouse(tea.MouseEvent(msg))
 	}
 	return m, nil
 }
@@ -253,15 +268,33 @@ func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
+	case "tab":
+		if m.activePane == leftPane {
+			m.activePane = rightPane
+		} else {
+			m.activePane = leftPane
+		}
+	case "pgup":
+		m.scrollActive(-m.pageSize())
+	case "pgdown":
+		m.scrollActive(m.pageSize())
+	case "home":
+		m.setActiveScroll(0)
+	case "end":
+		m.setActiveScroll(m.maxActiveScroll())
 	case "up", "k":
 		if m.selected > 0 {
 			m.selected--
+			m.rightScroll = 0
+			m.ensureSelectedVisible()
 			m.clearStatus()
 			return m, m.loadSelectedStatus()
 		}
 	case "down", "j":
 		if m.selected+1 < len(m.instances) {
 			m.selected++
+			m.rightScroll = 0
+			m.ensureSelectedVisible()
 			m.clearStatus()
 			return m, m.loadSelectedStatus()
 		}
@@ -314,6 +347,65 @@ func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.input.Focus()
 		}
 	case "enter":
+		return m, m.loadSelectedStatus()
+	}
+	return m, nil
+}
+
+func (m *model) handleMouse(mouse tea.MouseEvent) (tea.Model, tea.Cmd) {
+	if m.busy {
+		return m, nil
+	}
+	if mouse.Action == tea.MouseActionPress && mouse.Button == tea.MouseButtonLeft {
+		if m.mode != modeNormal {
+			return m.clickDialog(mouse.X, mouse.Y)
+		}
+		if key := m.footerKeyAt(mouse.X, mouse.Y); key != "" {
+			return m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		}
+	}
+	if m.mode != modeNormal {
+		return m, nil
+	}
+	if m.compact() {
+		return m, nil
+	}
+
+	leftWidth, _, bodyHeight := m.layout()
+	if mouse.Y < headerHeight || mouse.Y >= headerHeight+bodyHeight {
+		return m, nil
+	}
+	clickedPane := leftPane
+	if mouse.X > leftWidth {
+		clickedPane = rightPane
+	}
+	m.activePane = clickedPane
+
+	switch mouse.Button {
+	case tea.MouseButtonWheelUp:
+		m.scrollPane(clickedPane, -3)
+		return m, nil
+	case tea.MouseButtonWheelDown:
+		m.scrollPane(clickedPane, 3)
+		return m, nil
+	case tea.MouseButtonLeft:
+		if mouse.Action != tea.MouseActionPress || clickedPane != leftPane {
+			return m, nil
+		}
+		if mouse.X < 3 || mouse.X >= leftWidth-3 || mouse.Y < headerHeight+2 || mouse.Y >= headerHeight+bodyHeight-2 {
+			return m, nil
+		}
+		contentLine := mouse.Y - headerHeight - 2 + m.leftScroll
+		if contentLine < 3 {
+			return m, nil
+		}
+		index := (contentLine - 3) / 3
+		if index < 0 || index >= len(m.instances) || (contentLine-3)%3 == 2 {
+			return m, nil
+		}
+		m.selected = index
+		m.rightScroll = 0
+		m.clearStatus()
 		return m, m.loadSelectedStatus()
 	}
 	return m, nil
@@ -374,17 +466,31 @@ func (m *model) View() string {
 	if m.mode != modeNormal {
 		return fit(m.renderOverlay(), m.width, m.height)
 	}
-	if m.width < 72 || m.height < 20 {
+	if m.compact() {
 		return fit(m.renderCompact(), m.width, m.height)
 	}
 
 	leftWidth, rightWidth, bodyHeight := m.layout()
 	panel := lipgloss.NewStyle().Height(max(1, bodyHeight-2)).Padding(1, 2).Border(lipgloss.RoundedBorder()).BorderForeground(border)
+	leftPanel, rightPanel := panel, panel
+	if m.activePane == leftPane {
+		leftPanel = leftPanel.BorderForeground(accent)
+	} else {
+		rightPanel = rightPanel.BorderForeground(accent)
+	}
 	contentHeight := max(1, bodyHeight-4)
-	left := panel.Width(max(10, leftWidth-2)).Render(limitLines(m.renderDatabases(leftWidth-6, bodyHeight-4), contentHeight))
-	right := panel.Width(max(10, rightWidth-2)).Render(limitLines(m.renderDetails(rightWidth-6), contentHeight))
+	leftContent := m.renderDatabases(leftWidth-6, bodyHeight-4)
+	rightContent := m.renderDetails(rightWidth - 6)
+	m.leftScroll = clampScroll(m.leftScroll, leftContent, contentHeight)
+	m.rightScroll = clampScroll(m.rightScroll, rightContent, contentHeight)
+	left := leftPanel.Width(max(10, leftWidth-2)).Render(scrollContent(leftContent, m.leftScroll, contentHeight))
+	right := rightPanel.Width(max(10, rightWidth-2)).Render(scrollContent(rightContent, m.rightScroll, contentHeight))
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
 	return fit(lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderFooter()), m.width, m.height)
+}
+
+func (m *model) compact() bool {
+	return m.width < 72 || m.height < headerHeight+footerHeight(m.width)+5
 }
 
 func (m *model) layout() (leftWidth, rightWidth, bodyHeight int) {
@@ -394,7 +500,7 @@ func (m *model) layout() (leftWidth, rightWidth, bodyHeight int) {
 		leftWidth = max(20, total/2)
 	}
 	rightWidth = total - leftWidth - 1
-	bodyHeight = max(8, m.height-headerHeight-footerHeight(total))
+	bodyHeight = max(5, m.height-headerHeight-footerHeight(total))
 	return leftWidth, rightWidth, bodyHeight
 }
 
@@ -433,14 +539,8 @@ func (m *model) renderDatabases(width, height int) string {
 		}
 		return header + "\n\n" + strings.Join(hints, "\n")
 	}
-	rows := max(1, (height-3)/3)
-	start := 0
-	if m.selected >= rows {
-		start = m.selected - rows + 1
-	}
-	end := min(len(m.instances), start+rows)
 	lines := []string{header, ""}
-	for i := start; i < end; i++ {
+	for i := range m.instances {
 		lines = append(lines, m.renderDatabaseRow(i, width)...)
 	}
 	return strings.Join(lines, "\n")
@@ -798,6 +898,135 @@ func (m *model) selectedInstance() (orchestrator.Instance, bool) {
 	return m.instances[m.selected], true
 }
 
+func (m *model) pageSize() int {
+	if m.compact() {
+		return 1
+	}
+	_, _, bodyHeight := m.layout()
+	return max(1, bodyHeight-5)
+}
+
+func (m *model) setActiveScroll(value int) {
+	if m.activePane == leftPane {
+		m.leftScroll = value
+		return
+	}
+	m.rightScroll = value
+}
+
+func (m *model) scrollActive(delta int) {
+	m.scrollPane(m.activePane, delta)
+}
+
+func (m *model) scrollPane(target pane, delta int) {
+	if target == leftPane {
+		m.leftScroll = max(0, min(m.leftScroll+delta, m.maxScroll(leftPane)))
+		return
+	}
+	m.rightScroll = max(0, min(m.rightScroll+delta, m.maxScroll(rightPane)))
+}
+
+func (m *model) maxActiveScroll() int {
+	return m.maxScroll(m.activePane)
+}
+
+func (m *model) maxScroll(target pane) int {
+	if m.compact() {
+		return 0
+	}
+	leftWidth, rightWidth, bodyHeight := m.layout()
+	contentHeight := max(1, bodyHeight-4)
+	content := m.renderDatabases(leftWidth-6, bodyHeight-4)
+	if target == rightPane {
+		content = m.renderDetails(rightWidth - 6)
+	}
+	return max(0, lipgloss.Height(content)-contentHeight)
+}
+
+func (m *model) ensureSelectedVisible() {
+	if m.compact() || len(m.instances) == 0 {
+		return
+	}
+	_, _, bodyHeight := m.layout()
+	contentHeight := max(1, bodyHeight-4)
+	firstLine := 3 + m.selected*3
+	lastLine := firstLine + 1
+	if firstLine < m.leftScroll {
+		m.leftScroll = firstLine
+	} else if lastLine >= m.leftScroll+contentHeight {
+		m.leftScroll = lastLine - contentHeight + 1
+	}
+	m.leftScroll = max(0, min(m.leftScroll, m.maxScroll(leftPane)))
+}
+
+// Hit testing uses the rendered canvas, including padding, wrapping and clipping.
+func (m *model) footerKeyAt(x, y int) string {
+	view := m.View()
+	for _, control := range keyItems() {
+		if hitText(view, x, y, ansi.Strip(control.view)) {
+			return control.key
+		}
+	}
+	for _, control := range []struct{ label, key string }{
+		{"c create a database", "c"}, {"c create one", "c"},
+		{"p initialize the proxy", "p"}, {"s start this database", "s"},
+	} {
+		if hitText(view, x, y, strings.Replace(control.label, " ", "  ", 1)) {
+			return control.key
+		}
+	}
+	return ""
+}
+
+func hitText(view string, x, y int, label string) bool {
+	lines := strings.Split(ansi.Strip(view), "\n")
+	if y < 0 || y >= len(lines) || x < 0 {
+		return false
+	}
+	line := lines[y]
+	label = ansi.Strip(label)
+	index := strings.Index(line, label)
+	if index < 0 {
+		return false
+	}
+	start := lipgloss.Width(line[:index])
+	return x >= start && x < start+lipgloss.Width(label)
+}
+
+func (m *model) clickDialog(x, y int) (tea.Model, tea.Cmd) {
+	view := m.View()
+	if m.mode == modeCreate {
+		for index, input := range m.createInputs {
+			if hitText(view, x, y, inputView(input, max(1, min(66, m.width-4)-4))) {
+				m.createInputs[m.createFocus].Blur()
+				m.createFocus = index
+				return m, m.createInputs[index].Focus()
+			}
+		}
+	}
+	for _, control := range []struct {
+		label string
+		key   tea.KeyMsg
+	}{
+		{"esc cancel", tea.KeyMsg{Type: tea.KeyEsc}},
+		{"n cancel", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}},
+		{"y delete now", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}},
+		{"enter create", tea.KeyMsg{Type: tea.KeyEnter}},
+		{"enter export", tea.KeyMsg{Type: tea.KeyEnter}},
+		{"enter import", tea.KeyMsg{Type: tea.KeyEnter}},
+		{"tab switch", tea.KeyMsg{Type: tea.KeyTab}},
+		{"tab complete", tea.KeyMsg{Type: tea.KeyTab}},
+	} {
+		if hitText(view, x, y, strings.Replace(control.label, " ", "  ", 1)) {
+			if control.label == "enter create" {
+				m.createFocus = len(m.createInputs) - 1
+			}
+			return m.handleKey(control.key)
+		}
+	}
+	return m, nil
+}
+
 func (m *model) selectedName() string {
 	instance, ok := m.selectedInstance()
 	if !ok {
@@ -951,20 +1180,11 @@ func panelTitle(title, tag string, width int) string {
 }
 
 func keyLines(width int) []string {
-	items := []string{
-		shortcut("↑↓", "select", accent),
-		shortcut("c", "create", accent),
-		shortcut("s", "start/stop", green),
-		shortcut("p", "init/shutdown", purple),
-		shortcut("e", "export", yellow),
-		shortcut("i", "import", yellow),
-		shortcut("d", "delete", red),
-		shortcut("r", "refresh", accent),
-		shortcut("q", "quit", muted),
-	}
+	items := keyItems()
 	var lines []string
 	current, used := "", 0
-	for _, item := range items {
+	for _, control := range items {
+		item := control.view
 		w := lipgloss.Width(item)
 		if current != "" && used+2+w > width {
 			lines = append(lines, current)
@@ -986,6 +1206,25 @@ func keyLines(width int) []string {
 
 func footerHeight(width int) int {
 	return 4 + len(keyLines(max(10, width-4)))
+}
+
+type keyControl struct {
+	key  string
+	view string
+}
+
+func keyItems() []keyControl {
+	return []keyControl{
+		{key: "", view: shortcut("↑↓", "select", accent)},
+		{key: "c", view: shortcut("c", "create", accent)},
+		{key: "s", view: shortcut("s", "start/stop", green)},
+		{key: "p", view: shortcut("p", "init/shutdown", purple)},
+		{key: "e", view: shortcut("e", "export", yellow)},
+		{key: "i", view: shortcut("i", "import", yellow)},
+		{key: "d", view: shortcut("d", "delete", red)},
+		{key: "r", view: shortcut("r", "refresh", accent)},
+		{key: "q", view: shortcut("q", "quit", muted)},
+	}
 }
 
 type detailEntry struct {
@@ -1043,12 +1282,15 @@ func fit(view string, width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-func limitLines(content string, limit int) string {
+func scrollContent(content string, offset, height int) string {
 	lines := strings.Split(content, "\n")
-	if len(lines) <= limit {
-		return content
-	}
-	return strings.Join(lines[:max(1, limit)], "\n")
+	offset = max(0, min(offset, max(0, len(lines)-height)))
+	end := min(len(lines), offset+max(1, height))
+	return strings.Join(lines[offset:end], "\n")
+}
+
+func clampScroll(offset int, content string, height int) int {
+	return max(0, min(offset, max(0, lipgloss.Height(content)-height)))
 }
 
 func firstLine(value string) string {

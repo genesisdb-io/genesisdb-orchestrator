@@ -202,6 +202,82 @@ func TestCompletePathsMatchesFilesAndDirectories(t *testing.T) {
 	}
 }
 
+func TestPaneScrollingIsIndependent(t *testing.T) {
+	instances := make([]orchestrator.Instance, 12)
+	for index := range instances {
+		instances[index] = orchestrator.Instance{Name: fmt.Sprintf("database-%02d", index), Running: true}
+	}
+	m := &model{
+		instances: instances,
+		status:    testStatus(),
+		statusFor: instances[0].Name,
+		width:     100,
+		height:    24,
+	}
+
+	m.scrollPane(leftPane, 3)
+	if m.leftScroll == 0 || m.rightScroll != 0 {
+		t.Fatalf("left scroll = %d, right scroll = %d", m.leftScroll, m.rightScroll)
+	}
+	leftScroll := m.leftScroll
+	m.scrollPane(rightPane, 3)
+	if m.rightScroll == 0 || m.leftScroll != leftScroll {
+		t.Fatalf("left scroll = %d, right scroll = %d", m.leftScroll, m.rightScroll)
+	}
+}
+
+func TestMouseWheelScrollsPaneUnderPointer(t *testing.T) {
+	instances := make([]orchestrator.Instance, 12)
+	for index := range instances {
+		instances[index] = orchestrator.Instance{Name: fmt.Sprintf("database-%02d", index), Running: true}
+	}
+	m := &model{instances: instances, status: testStatus(), statusFor: instances[0].Name, width: 100, height: 24}
+	leftWidth, _, _ := m.layout()
+
+	_, _ = m.handleMouse(tea.MouseEvent{X: leftWidth + 2, Y: headerHeight + 2, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown})
+	if m.activePane != rightPane || m.rightScroll == 0 || m.leftScroll != 0 {
+		t.Fatalf("right pane was not scrolled: active=%v left=%d right=%d", m.activePane, m.leftScroll, m.rightScroll)
+	}
+	_, _ = m.handleMouse(tea.MouseEvent{X: 3, Y: headerHeight + 2, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown})
+	if m.activePane != leftPane || m.leftScroll == 0 {
+		t.Fatalf("left pane was not scrolled: active=%v left=%d", m.activePane, m.leftScroll)
+	}
+}
+
+func TestClickSelectsDatabase(t *testing.T) {
+	m := &model{
+		instances: []orchestrator.Instance{{Name: "orders"}, {Name: "payments"}},
+		width:     100,
+		height:    24,
+	}
+	secondRowY := headerHeight + 2 + 3 + 3
+	_, _ = m.handleMouse(tea.MouseEvent{X: 4, Y: secondRowY, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if m.selected != 1 {
+		t.Fatalf("selected = %d, want 1", m.selected)
+	}
+}
+
+func TestFooterControlsAreClickable(t *testing.T) {
+	m := &model{createInputs: newCreateInputs(), width: 100, height: 24}
+	var x, y int
+	found := false
+	for row := 0; row < m.height && !found; row++ {
+		for column := 0; column < m.width; column++ {
+			if m.footerKeyAt(column, row) == "c" {
+				x, y, found = column, row, true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Fatal("create footer control has no clickable area")
+	}
+	_, _ = m.handleMouse(tea.MouseEvent{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if m.mode != modeCreate {
+		t.Fatalf("mode = %v, want create", m.mode)
+	}
+}
+
 func TestTabCyclesPathCompletions(t *testing.T) {
 	m := &model{input: textInputForTest(), pathCompletions: []string{"first.json", "second.json"}, pathCompletion: -1}
 	m.completePath(1)
