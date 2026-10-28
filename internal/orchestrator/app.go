@@ -17,6 +17,12 @@ const (
 	proxyContainer = "genesisdb-local-proxy"
 	caddyImage     = "caddy:2-alpine"
 	genesisImage   = "genesisdb/genesisdb:latest"
+	// genesisDataDir is the data directory of the GenesisDB image. The image
+	// runs as UID 10001 and owns this directory, so a fresh volume mounted
+	// here inherits writable permissions.
+	genesisDataDir = "/app/data"
+	// MinimumTokenLength is the shortest auth token GenesisDB accepts.
+	MinimumTokenLength = 32
 )
 
 var validName = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
@@ -40,6 +46,15 @@ func New() *Orchestrator {
 		sitesDir:  filepath.Join(config, "caddy", "sites"),
 		certsDir:  filepath.Join(config, "certs"),
 	}
+}
+
+// ValidateToken checks an auth token against the minimum GenesisDB enforces,
+// so a short token fails before a container is created.
+func ValidateToken(token string) error {
+	if len(token) < MinimumTokenLength {
+		return fmt.Errorf("auth token must contain at least %d bytes, generate one with openssl rand -hex 32", MinimumTokenLength)
+	}
+	return nil
 }
 
 // ValidateName checks that an instance name is a valid local DNS label.
@@ -185,7 +200,10 @@ func managedInstances() ([]string, error) {
 }
 
 // Create creates and starts a GenesisDB instance.
-func (a *Orchestrator) Create(name, token, license string) error {
+func (a *Orchestrator) Create(name, token string) error {
+	if err := ValidateToken(token); err != nil {
+		return err
+	}
 	if err := requireProxy(); err != nil {
 		return err
 	}
@@ -206,10 +224,9 @@ func (a *Orchestrator) Create(name, token, license string) error {
 		"--restart", "unless-stopped",
 		"--label", "io.genesisdb.local.role=instance",
 		"--label", "io.genesisdb.local.name=" + name,
-		"--mount", "type=volume,src=" + volume + ",dst=/data",
+		"--mount", "type=volume,src=" + volume + ",dst=" + genesisDataDir,
 		"-e", "GENESISDB_AUTH_TOKEN=" + token,
-		"-e", "GENESISDB_LICENSE=" + license,
-		"-e", "GENESISDB_DATA_DIR=/data",
+		"-e", "GENESISDB_DATA_DIR=" + genesisDataDir,
 		"-e", "GENESISDB_TZ=UTC",
 		"-e", "GENESISDB_METRICS=true",
 		genesisImage,

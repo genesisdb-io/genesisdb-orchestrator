@@ -69,16 +69,16 @@ genesisdb
 
 The dashboard initializes the local proxy and starts existing databases automatically when it opens. Administrator access is requested when certificate or hosts-file setup requires it. It then lists running and stopped databases and refreshes automatically. Select an instance with the arrow keys or `j` and `k`. Available actions:
 
-- `c`: create a database with name, visible auth token, and optional license fields
+- `c`: create a database with name and visible auth token
 - `s`: start or stop the selected database
 - `p`: initialize everything or shut down all databases and the proxy
-- `e`: export a JSON backup through `GET /api/v1/backup/create`
-- `i`: restore a JSON backup through `POST /api/v1/backup/restore`
+- `e`: export a JSON backup through `GET /api/v2/admin/backup`
+- `i`: restore a JSON backup through `POST /api/v2/admin/restore`
 - `d`: permanently delete the database after confirmation
-- `r`: refresh containers and `GET /api/v1/status` data
+- `r`: refresh containers and `GET /api/v2/status` data
 - `q`: close the dashboard
 
-The details panel displays engine, event store, system, storage, memory, CPU, and license information from `/api/v1/status`. Import and export path inputs suggest matching files and directories while you type. Use Tab and Shift+Tab to cycle through completions. Backup restore only works with an empty target event store, as required by GenesisDB. Restore requests have no client-side timeout, so large backups can run until GenesisDB completes or returns an error.
+The details panel displays engine, event store, system, memory, CPU, and storage information from `/api/v2/status`. Import and export path inputs suggest matching files and directories while you type. Use Tab and Shift+Tab to cycle through completions. Backup restore only works with an empty target event store, as required by GenesisDB. Restore requests have no client-side timeout, so large backups can run until GenesisDB completes or returns an error.
 
 The dashboard keeps a fixed terminal-sized canvas and pauses automatic Docker polling while a dialog or lifecycle operation is active. This avoids redraw jitter and prevents background refreshes from replacing action or validation errors. Click a database to select it, click footer actions to run them, and use the mouse wheel over either pane to scroll it independently. Tab switches the active pane; Page Up, Page Down, Home, and End scroll it with the keyboard.
 
@@ -94,7 +94,7 @@ genesisdb init
 
 Do not run the whole command with `sudo` on macOS or Linux. The CLI stores state for the current user and invokes `sudo` only for certificate and hosts-file changes.
 
-Create an instance with the interactive wizard. The auth token remains visible while typing. The license key is hidden and optional, so press Enter to use the free license:
+Create an instance with the interactive wizard. The auth token remains visible while typing. GenesisDB requires at least 32 bytes, generate one with `openssl rand -hex 32`:
 
 ```sh
 genesisdb create
@@ -103,10 +103,8 @@ genesisdb create
 You can also provide values directly, or provide some values and let the wizard prompt for the missing required values:
 
 ```sh
-genesisdb create <name> --auth-token secret --license-key license
-genesisdb create <name> --auth-token secret                         # free license
-genesisdb create <name> --auth-token secret --license-key ""        # free license
-genesisdb create <name>                                             # interactive secrets
+genesisdb create <name> --auth-token "$(openssl rand -hex 32)"
+genesisdb create <name>                                   # interactive token
 ```
 
 Stop or permanently delete one instance:

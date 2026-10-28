@@ -2,38 +2,41 @@ package cli
 
 import "testing"
 
+// validToken has the 32 bytes GenesisDB requires at minimum.
+const validToken = "0123456789abcdef0123456789abcdef"
+
 func TestParseCreateAnyOrder(t *testing.T) {
-	name, token, license, err := parseCreate([]string{"--license-key", "license", "dev-1", "--auth-token", "secret"})
+	name, token, err := parseCreate([]string{"--auth-token", validToken, "dev-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if name != "dev-1" || token != "secret" || license != "license" {
-		t.Fatalf("unexpected values: %q %q %q", name, token, license)
+	if name != "dev-1" || token != validToken {
+		t.Fatalf("unexpected values: %q %q", name, token)
 	}
 }
 
-func TestCreateAllowsEmptyLicense(t *testing.T) {
-	name, token, license, err := parseCreate([]string{"dev", "--auth-token", "secret", "--license-key", ""})
+func TestCreateWithAllArgumentsSkipsWizard(t *testing.T) {
+	name, token, err := parseCreate([]string{"dev", "--auth-token", validToken})
 	if err != nil {
 		t.Fatal(err)
 	}
-	name, token, license, err = completeCreateWizard(name, token, license)
+	name, token, err = completeCreateWizard(name, token)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if name != "dev" || token != "secret" || license != "" {
-		t.Fatalf("unexpected values: %q %q %q", name, token, license)
+	if name != "dev" || token != validToken {
+		t.Fatalf("unexpected values: %q %q", name, token)
 	}
 }
 
 func TestParseCreateAllowsWizardArguments(t *testing.T) {
 	cases := [][]string{
 		{},
-		{"dev", "--auth-token", "secret"},
-		{"dev", "--license-key", "license"},
+		{"dev"},
+		{"dev", "--auth-token", validToken},
 	}
 	for _, args := range cases {
-		if _, _, _, err := parseCreate(args); err != nil {
+		if _, _, err := parseCreate(args); err != nil {
 			t.Errorf("expected wizard-compatible arguments %#v to parse: %v", args, err)
 		}
 	}
@@ -42,11 +45,12 @@ func TestParseCreateAllowsWizardArguments(t *testing.T) {
 func TestParseCreateRejectsMalformedArguments(t *testing.T) {
 	cases := [][]string{
 		{"dev", "--auth-token"},
-		{"dev", "--license-key"},
-		{"dev", "--unknown", "value", "--auth-token", "secret", "--license-key", "license"},
+		{"dev", "--auth-token", "too-short"},
+		{"dev", "--license-key", "license"},
+		{"dev", "--unknown", "value", "--auth-token", validToken},
 	}
 	for _, args := range cases {
-		if _, _, _, err := parseCreate(args); err == nil {
+		if _, _, err := parseCreate(args); err == nil {
 			t.Errorf("expected error for %#v", args)
 		}
 	}

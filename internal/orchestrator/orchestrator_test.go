@@ -24,19 +24,59 @@ func TestValidateName(t *testing.T) {
 	}
 }
 
+func TestValidateToken(t *testing.T) {
+	if err := ValidateToken(strings.Repeat("a", MinimumTokenLength)); err != nil {
+		t.Errorf("token of minimum length rejected: %v", err)
+	}
+	for _, token := range []string{"", "development-secret", strings.Repeat("a", MinimumTokenLength-1)} {
+		if err := ValidateToken(token); err == nil {
+			t.Errorf("token of %d bytes should be rejected", len(token))
+		}
+	}
+}
+
+// The status payload is the GET /api/v2/status answer of GenesisDB 2.0.
 func TestStatusJSON(t *testing.T) {
 	payload := []byte(`{
-		"engine":{"version":"1.2.3","edition":"enterprise","channel":"stable"},
+		"engine":{"version":"2.0.0","channel":"stable"},
 		"system":{"os":"linux","arch":"arm64","cpu":{"availableCores":8,"usedCores":2},"memory":{"total":100,"used":40,"available":60},"storage":{"max":1000,"used":300,"available":700}},
-		"license":{"status":"valid","validUntil":"2027-01-01"},
-		"events":{"count":42,"subjects":7,"types":3,"storageSize":2048}
+		"events":{"count":42,"subjects":7,"types":3,"storageSize":2048},
+		"storage":{"storageFormat":"current","ready":true}
 	}`)
 	var status Status
 	if err := json.Unmarshal(payload, &status); err != nil {
 		t.Fatal(err)
 	}
-	if status.Engine.Version != "1.2.3" || status.Events.Count != 42 || status.System.Storage.Max != 1000 {
+	if status.Engine.Version != "2.0.0" || status.Events.Count != 42 || status.System.Storage.Max != 1000 {
 		t.Fatalf("unexpected status: %#v", status)
+	}
+	if status.Storage.Format != "current" || !status.Storage.Ready {
+		t.Fatalf("storage status not decoded: %#v", status.Storage)
+	}
+}
+
+// The orchestrator talks to the current API. API v1 is frozen and new
+// routes such as /api/v2/admin/backup do not exist there.
+func TestManagementUsesAPIv2(t *testing.T) {
+	source, err := os.ReadFile("management.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(source), "/api/v1/") {
+		t.Fatal("management.go still calls /api/v1")
+	}
+	for _, route := range []string{"/api/v2/status", "/api/v2/admin/backup", "/api/v2/admin/restore"} {
+		if !strings.Contains(string(source), route) {
+			t.Errorf("management.go does not call %s", route)
+		}
+	}
+}
+
+// The GenesisDB image runs as UID 10001 and only /app/data is writable for
+// it. A volume mounted elsewhere is owned by root and GenesisDB fails to start.
+func TestInstanceUsesImageDataDirectory(t *testing.T) {
+	if genesisDataDir != "/app/data" {
+		t.Fatalf("data directory = %q, want /app/data", genesisDataDir)
 	}
 }
 

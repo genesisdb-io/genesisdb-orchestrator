@@ -29,8 +29,7 @@ func TestFormatBytes(t *testing.T) {
 
 func testStatus() orchestrator.Status {
 	var status orchestrator.Status
-	status.Engine.Version = "1.2.3"
-	status.Engine.Edition = "enterprise"
+	status.Engine.Version = "2.0.0"
 	status.Engine.Channel = "stable"
 	status.System.OS = "linux"
 	status.System.Arch = "arm64"
@@ -41,6 +40,8 @@ func testStatus() orchestrator.Status {
 	status.Events.Count = 42
 	status.Events.Subjects = 7
 	status.Events.Types = 3
+	status.Storage.Format = "current"
+	status.Storage.Ready = true
 	return status
 }
 
@@ -60,7 +61,7 @@ func TestDashboardRendersInstanceStatus(t *testing.T) {
 	if got := lipgloss.Height(view); got > m.height {
 		t.Errorf("dashboard height = %d, terminal height = %d", got, m.height)
 	}
-	for _, text := range []string{"GenesisDB", "orders", "RUNNING", "1.2.3", "42", "linux / arm64", "proxy running"} {
+	for _, text := range []string{"GenesisDB", "orders", "RUNNING", "2.0.0", "42", "linux / arm64", "current", "proxy running"} {
 		if !strings.Contains(view, text) {
 			t.Errorf("dashboard does not contain %q", text)
 		}
@@ -77,8 +78,6 @@ func TestDashboardFitsResponsiveTerminals(t *testing.T) {
 			width:     dimensions.width,
 			height:    dimensions.height,
 		}
-		m.status.License.Status = "You are using the free developer license."
-		m.status.License.ValidUntil = "2099-12-31T23:59:59Z"
 		view := m.View()
 		if got := lipgloss.Width(view); got > dimensions.width {
 			t.Errorf("%dx%d dashboard width = %d", dimensions.width, dimensions.height, got)
@@ -131,11 +130,24 @@ func TestCreateKeyOpensWizard(t *testing.T) {
 		t.Fatalf("create wizard did not open: mode=%v cmd=%v", m.mode, cmd)
 	}
 	m.createInputs[0].SetValue("orders")
-	m.createInputs[1].SetValue("secret")
-	m.createFocus = 2
+	m.createInputs[1].SetValue("0123456789abcdef0123456789abcdef")
+	m.createFocus = len(m.createInputs) - 1
 	_, cmd = m.handleCreateKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.mode != modeNormal || !m.busy || cmd == nil {
 		t.Fatalf("create wizard did not submit: mode=%v busy=%v cmd=%v", m.mode, m.busy, cmd)
+	}
+}
+
+// GenesisDB refuses tokens shorter than 32 bytes and the container would
+// exit right after start, so the wizard rejects them before creating it.
+func TestCreateWizardRejectsShortToken(t *testing.T) {
+	m := &model{createInputs: newCreateInputs(), mode: modeCreate}
+	m.createInputs[0].SetValue("orders")
+	m.createInputs[1].SetValue("development-secret")
+	m.createFocus = len(m.createInputs) - 1
+	_, cmd := m.handleCreateKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != modeCreate || m.busy || cmd != nil || m.err == nil {
+		t.Fatalf("short token was accepted: mode=%v busy=%v cmd=%v err=%v", m.mode, m.busy, cmd, m.err)
 	}
 }
 

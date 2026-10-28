@@ -436,13 +436,12 @@ func (m *model) handleCreateKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		name := strings.TrimSpace(m.createInputs[0].Value())
 		token := strings.TrimSpace(m.createInputs[1].Value())
-		license := m.createInputs[2].Value()
 		if err := orchestrator.ValidateName(name); err != nil {
 			m.err = err
 			return m, nil
 		}
-		if token == "" {
-			m.err = fmt.Errorf("auth token cannot be empty")
+		if err := orchestrator.ValidateToken(token); err != nil {
+			m.err = err
 			return m, nil
 		}
 		m.err = nil
@@ -451,7 +450,7 @@ func (m *model) handleCreateKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		for index := range m.createInputs {
 			m.createInputs[index].Blur()
 		}
-		return m, createProcess(name, token, license)
+		return m, createProcess(name, token)
 	}
 	var cmd tea.Cmd
 	m.createInputs[m.createFocus], cmd = m.createInputs[m.createFocus].Update(key)
@@ -599,7 +598,7 @@ func (m *model) renderDetails(width int) string {
 		return top + "\n" + dimStyle.Render(clamp("This database is stopped.", width)) + "\n\n" + clamp(shortcut("s", "start this database", green), width)
 	}
 	if m.statusFor != instance.Name {
-		return top + "\n" + m.spinner.View() + " loading /api/v1/status"
+		return top + "\n" + m.spinner.View() + " loading /api/v2/status"
 	}
 	if m.statusErr != nil {
 		return top + "\n" + badge("status unavailable", yellow) + "\n\n" + dimStyle.Render(clamp(firstLine(m.statusErr.Error()), width))
@@ -608,7 +607,6 @@ func (m *model) renderDetails(width int) string {
 	status := m.status
 	engine := section("engine", width,
 		entry("Version", empty(status.Engine.Version)),
-		entry("Edition", empty(status.Engine.Edition)),
 		entry("Channel", empty(status.Engine.Channel)),
 	)
 	events := section("event store", width,
@@ -623,16 +621,15 @@ func (m *model) renderDetails(width int) string {
 		entry("Memory", usageText(status.System.Memory)),
 		entry("Storage", usageText(status.System.Storage)),
 	)
-	license := section("license", width,
-		entry("Status", empty(status.License.Status)),
-		entry("Valid until", formatValue(status.License.ValidUntil)),
+	storage := section("storage", width,
+		entry("Format", empty(status.Storage.Format)),
+		entry("Ready", readyText(status.Storage.Ready)),
 	)
 
 	if width >= 56 {
 		columnWidth := (width - 2) / 2
 		engine = section("engine", columnWidth,
 			entry("Version", empty(status.Engine.Version)),
-			entry("Edition", empty(status.Engine.Edition)),
 			entry("Channel", empty(status.Engine.Channel)),
 		)
 		events = section("event store", columnWidth,
@@ -647,15 +644,15 @@ func (m *model) renderDetails(width int) string {
 			entry("Memory", usageText(status.System.Memory)),
 			entry("Storage", usageText(status.System.Storage)),
 		)
-		license = section("license", columnWidth,
-			entry("Status", empty(status.License.Status)),
-			entry("Valid until", formatValue(status.License.ValidUntil)),
+		storage = section("storage", columnWidth,
+			entry("Format", empty(status.Storage.Format)),
+			entry("Ready", readyText(status.Storage.Ready)),
 		)
 		topRow := lipgloss.JoinHorizontal(lipgloss.Top, engine, "  ", events)
-		bottomRow := lipgloss.JoinHorizontal(lipgloss.Top, system, "  ", license)
+		bottomRow := lipgloss.JoinHorizontal(lipgloss.Top, system, "  ", storage)
 		return top + "\n" + topRow + "\n\n" + bottomRow
 	}
-	return top + "\n" + engine + "\n\n" + events + "\n\n" + system + "\n\n" + license
+	return top + "\n" + engine + "\n\n" + events + "\n\n" + system + "\n\n" + storage
 }
 
 func (m *model) renderFooter() string {
@@ -748,7 +745,6 @@ func (m *model) renderOverlay() string {
 			"",
 			inputView(m.createInputs[0], inner),
 			inputView(m.createInputs[1], inner),
-			inputView(m.createInputs[2], inner),
 			"",
 			shortcut("tab", "switch", purple) + "  " + shortcut("enter", "create", green) + "  " + shortcut("esc", "cancel", muted),
 		}
@@ -865,12 +861,12 @@ func proxyProcess(running bool) tea.Cmd {
 	})
 }
 
-func createProcess(name, token, license string) tea.Cmd {
+func createProcess(name, token string) tea.Cmd {
 	executable, err := os.Executable()
 	if err != nil {
 		return func() tea.Msg { return actionMsg{name: name, action: "created", err: err, refresh: true} }
 	}
-	command := exec.Command(executable, "create", name, "--auth-token", token, "--license-key", license)
+	command := exec.Command(executable, "create", name, "--auth-token", token)
 	return tea.ExecProcess(command, func(err error) tea.Msg {
 		return actionMsg{name: name, action: "created", err: err, refresh: true}
 	})
@@ -1051,11 +1047,8 @@ func indexByName(instances []orchestrator.Instance, name string) int {
 
 func newCreateInputs() []textinput.Model {
 	name := styledInput("name     ", "orders", 63)
-	token := styledInput("token    ", "development-secret", 512)
-	license := styledInput("license  ", "press enter for the free license", 4096)
-	license.EchoMode = textinput.EchoPassword
-	license.EchoCharacter = '*'
-	return []textinput.Model{name, token, license}
+	token := styledInput("token    ", "at least 32 bytes, openssl rand -hex 32", 512)
+	return []textinput.Model{name, token}
 }
 
 func styledInput(prompt, placeholder string, limit int) textinput.Model {
@@ -1341,11 +1334,11 @@ func formatBytes(value uint64) string {
 	return fmt.Sprintf("%.1f PiB", size/1024)
 }
 
-func formatValue(value interface{}) string {
-	if value == nil || value == false || value == "" {
-		return "not available"
+func readyText(ready bool) string {
+	if ready {
+		return "yes"
 	}
-	return fmt.Sprint(value)
+	return "no"
 }
 
 func empty(value string) string {

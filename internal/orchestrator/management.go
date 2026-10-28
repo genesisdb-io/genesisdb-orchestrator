@@ -23,11 +23,10 @@ type Instance struct {
 	Running   bool
 }
 
-// Status is returned by GenesisDB's GET /api/v1/status endpoint.
+// Status is returned by GenesisDB's GET /api/v2/status endpoint.
 type Status struct {
 	Engine struct {
 		Version string `json:"version"`
-		Edition string `json:"edition"`
 		Channel string `json:"channel"`
 	} `json:"engine"`
 	System struct {
@@ -37,10 +36,10 @@ type Status struct {
 		Memory  Usage  `json:"memory"`
 		Storage Usage  `json:"storage"`
 	} `json:"system"`
-	License struct {
-		Status     string      `json:"status"`
-		ValidUntil interface{} `json:"validUntil"`
-	} `json:"license"`
+	Storage struct {
+		Format string `json:"storageFormat"`
+		Ready  bool   `json:"ready"`
+	} `json:"storage"`
 	Events struct {
 		Count       int   `json:"count"`
 		Subjects    int   `json:"subjects"`
@@ -177,7 +176,7 @@ func (a *Orchestrator) DeleteInstance(name string) error {
 // Status fetches detailed status information from one running instance.
 func (a *Orchestrator) Status(ctx context.Context, name string) (Status, error) {
 	var status Status
-	response, err := a.apiRequest(ctx, name, http.MethodGet, "/api/v1/status", nil)
+	response, err := a.apiRequest(ctx, name, http.MethodGet, "/api/v2/status", nil)
 	if err != nil {
 		return status, err
 	}
@@ -190,7 +189,7 @@ func (a *Orchestrator) Status(ctx context.Context, name string) (Status, error) 
 
 // ExportBackup writes a verified API response to destination atomically.
 func (a *Orchestrator) ExportBackup(ctx context.Context, name, destination string) error {
-	response, err := a.apiRequest(ctx, name, http.MethodGet, "/api/v1/backup/create", nil)
+	response, err := a.apiRequest(ctx, name, http.MethodGet, "/api/v2/admin/backup", nil)
 	if err != nil {
 		return err
 	}
@@ -226,7 +225,7 @@ func (a *Orchestrator) ImportBackup(ctx context.Context, name, source string) er
 		return fmt.Errorf("open backup: %w", err)
 	}
 	defer file.Close()
-	response, err := a.apiRequest(ctx, name, http.MethodPost, "/api/v1/backup/restore", file)
+	response, err := a.apiRequest(ctx, name, http.MethodPost, "/api/v2/admin/restore", file)
 	if err != nil {
 		return err
 	}

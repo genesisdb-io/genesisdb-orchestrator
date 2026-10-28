@@ -60,7 +60,7 @@ func TestRenderedClicks(t *testing.T) {
 
 func TestShortPaneScrollPreservesSelection(t *testing.T) {
 	m := &model{width: 100, height: 18, instances: []orchestrator.Instance{{Name: "orders", Running: true}}, statusFor: "orders", status: testStatus()}
-	m.status.License.Status = "license-at-bottom"
+	m.status.Storage.Format = "storage-at-bottom"
 	if m.compact() {
 		t.Fatal("short terminal hid panes")
 	}
@@ -72,7 +72,7 @@ func TestShortPaneScrollPreservesSelection(t *testing.T) {
 		t.Fatal("wheel must scroll content without changing selection")
 	}
 	after := m.View()
-	if before == after || !strings.Contains(ansi.Strip(after), "license-at-bottom") {
+	if before == after || !strings.Contains(ansi.Strip(after), "storage-at-bottom") {
 		t.Fatal("bottom of details is unreachable")
 	}
 }

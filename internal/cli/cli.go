@@ -26,7 +26,7 @@ Usage:
   genesisdb init
   genesisdb shutdown
   genesisdb create
-  genesisdb create <name> --auth-token <token> [--license-key <key>]
+  genesisdb create <name> --auth-token <token>
   genesisdb stop <name>
   genesisdb delete <name>
   genesisdb update [--check]
@@ -96,15 +96,15 @@ func Run(args []string, version string) error {
 		}
 		return orchestrator.New().Shutdown()
 	case "create":
-		name, token, license, err := parseCreate(args[1:])
+		name, token, err := parseCreate(args[1:])
 		if err != nil {
 			return err
 		}
-		name, token, license, err = completeCreateWizard(name, token, license)
+		name, token, err = completeCreateWizard(name, token)
 		if err != nil {
 			return err
 		}
-		return orchestrator.New().Create(name, token, license)
+		return orchestrator.New().Create(name, token)
 	case "stop", "delete":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: genesisdb %s <name>", args[0])
@@ -180,45 +180,44 @@ func styledUsage(output *os.File) string {
 	return strings.Replace(styled, "Commands:", brandColor+"Commands:"+colorReset, 1)
 }
 
-func parseCreate(args []string) (name, token, license string, err error) {
+func parseCreate(args []string) (name, token string, err error) {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--auth-token":
 			i++
 			if i >= len(args) || args[i] == "" {
-				return "", "", "", errors.New("--auth-token requires a value")
+				return "", "", errors.New("--auth-token requires a value")
 			}
 			token = args[i]
-		case "--license-key":
-			i++
-			if i >= len(args) {
-				return "", "", "", errors.New("--license-key requires a value; use an empty string for the free license")
-			}
-			license = args[i]
 		default:
 			if strings.HasPrefix(args[i], "-") {
-				return "", "", "", fmt.Errorf("unknown option %q", args[i])
+				return "", "", fmt.Errorf("unknown option %q", args[i])
 			}
 			if name != "" {
-				return "", "", "", errors.New("create accepts exactly one instance name")
+				return "", "", errors.New("create accepts exactly one instance name")
 			}
 			name = args[i]
 		}
 	}
 	if name != "" {
 		if err := orchestrator.ValidateName(name); err != nil {
-			return "", "", "", err
+			return "", "", err
 		}
 	}
-	return name, token, license, nil
+	if token != "" {
+		if err := orchestrator.ValidateToken(token); err != nil {
+			return "", "", err
+		}
+	}
+	return name, token, nil
 }
 
-func completeCreateWizard(name, token, license string) (string, string, string, error) {
+func completeCreateWizard(name, token string) (string, string, error) {
 	if name != "" && token != "" {
-		return name, token, license, nil
+		return name, token, nil
 	}
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return "", "", "", errors.New("missing create arguments in a non-interactive terminal; provide <name> and --auth-token")
+		return "", "", errors.New("missing create arguments in a non-interactive terminal; provide <name> and --auth-token")
 	}
 
 	title := "Create a GenesisDB instance"
@@ -231,27 +230,23 @@ func completeCreateWizard(name, token, license string) (string, string, string, 
 		var err error
 		name, err = readVisible("  Name: ", false)
 		if err != nil {
-			return "", "", "", err
+			return "", "", err
 		}
 		if err := orchestrator.ValidateName(name); err != nil {
-			return "", "", "", err
+			return "", "", err
 		}
 	}
 	if token == "" {
 		var err error
-		token, err = readVisible("  Auth token: ", false)
+		token, err = readVisible("  Auth token (at least 32 bytes, openssl rand -hex 32): ", false)
 		if err != nil {
-			return "", "", "", err
+			return "", "", err
+		}
+		if err := orchestrator.ValidateToken(token); err != nil {
+			return "", "", err
 		}
 	}
-	if license == "" {
-		var err error
-		license, err = readSecret("  License key (optional): ", true)
-		if err != nil {
-			return "", "", "", err
-		}
-	}
-	return name, token, license, nil
+	return name, token, nil
 }
 
 func readVisible(prompt string, allowEmpty bool) (string, error) {
@@ -265,19 +260,6 @@ func readVisible(prompt string, allowEmpty bool) (string, error) {
 		return "", errors.New("value cannot be empty")
 	}
 	return value, nil
-}
-
-func readSecret(prompt string, allowEmpty bool) (string, error) {
-	fmt.Fprint(os.Stdout, prompt)
-	value, err := term.ReadPassword(int(os.Stdin.Fd()))
-	fmt.Fprintln(os.Stdout)
-	if err != nil {
-		return "", fmt.Errorf("read secret: %w", err)
-	}
-	if len(value) == 0 && !allowEmpty {
-		return "", errors.New("value cannot be empty")
-	}
-	return string(value), nil
 }
 
 func colorEnabled(output *os.File) bool {
