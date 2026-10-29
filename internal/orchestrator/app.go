@@ -219,6 +219,9 @@ func (a *Orchestrator) Create(name, token string) error {
 	volume := instanceVolume(name)
 	args := []string{
 		"run", "-d",
+		// latest moves with every release. Without a pull, a machine that once
+		// ran an older image keeps creating instances from that cached image.
+		"--pull", "always",
 		"--name", container,
 		"--network", dockerNetwork,
 		"--restart", "unless-stopped",

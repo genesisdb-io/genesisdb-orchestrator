@@ -2,6 +2,9 @@ package orchestrator
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,8 +65,10 @@ func TestManagementUsesAPIv2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(source), "/api/v1/") {
-		t.Fatal("management.go still calls /api/v1")
+	// The only API v1 call is the export fallback for 1.x instances, which
+	// must stay exportable so their data can move to a 2.0 instance.
+	if got := strings.Count(string(source), "/api/v1/"); got != 1 || !strings.Contains(string(source), `"/api/v1/backup/create"`) {
+		t.Fatalf("management.go has %d API v1 references, want only the backup export fallback", got)
 	}
 	for _, route := range []string{"/api/v2/status", "/api/v2/admin/backup", "/api/v2/admin/restore"} {
 		if !strings.Contains(string(source), route) {
@@ -78,6 +83,40 @@ func TestInstanceUsesImageDataDirectory(t *testing.T) {
 	if genesisDataDir != "/app/data" {
 		t.Fatalf("data directory = %q, want /app/data", genesisDataDir)
 	}
+}
+
+func answer(status int, body string) *http.Response {
+	return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body))}
+}
+
+// An instance created before GenesisDB 2.0 runs a 1.x image that answers 404
+// on API v2. The error must name the instance and explain how to recreate it
+// instead of surfacing a bare HTTP 404.
+func TestVersion1InstanceIsExplained(t *testing.T) {
+	_, err := checkResponse("orders", "/api/v2/status", answer(http.StatusNotFound, "404 page not found"))
+	if !errors.Is(err, errVersion1Instance) {
+		t.Fatalf("404 on API v2 = %v, want errVersion1Instance", err)
+	}
+	for _, text := range []string{"orders", "GenesisDB 1.x", "backup"} {
+		if !strings.Contains(err.Error(), text) {
+			t.Errorf("error %q does not mention %q", err, text)
+		}
+	}
+}
+
+func TestCheckResponseKeepsOtherErrors(t *testing.T) {
+	if _, err := checkResponse("orders", "/api/v1/backup/create", answer(http.StatusNotFound, "")); errors.Is(err, errVersion1Instance) {
+		t.Fatal("a 404 on API v1 is not a 1.x instance")
+	}
+	_, err := checkResponse("orders", "/api/v2/admin/restore", answer(http.StatusConflict, "store is not empty"))
+	if err == nil || errors.Is(err, errVersion1Instance) || !strings.Contains(err.Error(), "409") || !strings.Contains(err.Error(), "store is not empty") {
+		t.Fatalf("409 = %v", err)
+	}
+	body, err := checkResponse("orders", "/api/v2/status", answer(http.StatusOK, "{}"))
+	if err != nil || body == nil {
+		t.Fatalf("200 = %v", err)
+	}
+	body.Close()
 }
 
 func TestEnsureCertificates(t *testing.T) {

@@ -190,6 +190,11 @@ func (a *Orchestrator) Status(ctx context.Context, name string) (Status, error) 
 // ExportBackup writes a verified API response to destination atomically.
 func (a *Orchestrator) ExportBackup(ctx context.Context, name, destination string) error {
 	response, err := a.apiRequest(ctx, name, http.MethodGet, "/api/v2/admin/backup", nil)
+	if errors.Is(err, errVersion1Instance) {
+		// A 1.x instance has to be backed up before it is recreated for 2.0,
+		// so export stays possible through the frozen 1.x route.
+		response, err = a.apiRequest(ctx, name, http.MethodGet, "/api/v1/backup/create", nil)
+	}
 	if err != nil {
 		return err
 	}
@@ -265,6 +270,16 @@ func (a *Orchestrator) apiRequest(ctx context.Context, name, method, path string
 	if err != nil {
 		return nil, fmt.Errorf("request %s: %w", path, err)
 	}
+	return checkResponse(name, path, response)
+}
+
+// checkResponse returns the body of a successful answer and turns every other
+// answer into an error. The caller owns the returned body.
+func checkResponse(name, path string, response *http.Response) (io.ReadCloser, error) {
+	if response.StatusCode == http.StatusNotFound && strings.HasPrefix(path, "/api/v2/") {
+		response.Body.Close()
+		return nil, errInstanceTooOld(name)
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		defer response.Body.Close()
 		message, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
@@ -272,6 +287,18 @@ func (a *Orchestrator) apiRequest(ctx context.Context, name, method, path string
 	}
 	return response.Body, nil
 }
+
+// errInstanceTooOld explains a 404 from an API v2 route. Instances created by
+// orchestrator releases before GenesisDB 2.0 run a 1.x image, which only
+// serves /api/v1, and mount their volume at /data instead of /app/data.
+func errInstanceTooOld(name string) error {
+	return fmt.Errorf("%w: instance %q runs GenesisDB 1.x, which this orchestrator no longer supports. "+
+		"Recreate it for GenesisDB 2.0: export a backup first, then delete and create it again and restore the backup",
+		errVersion1Instance, name)
+}
+
+// errVersion1Instance marks an instance that answers 404 on API v2.
+var errVersion1Instance = errors.New("GenesisDB 1.x instance")
 
 func (a *Orchestrator) apiClient() (*http.Client, error) {
 	roots, err := x509.SystemCertPool()

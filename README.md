@@ -11,6 +11,19 @@ HTTPS is recommended for browsers and applications that use the operating system
 
 The GenesisDB container itself listens on its standard port 8080 inside a private Docker network. Instance data is stored in a named Docker volume.
 
+Instances run GenesisDB 2.0 from `genesisdb/genesisdb:latest`, which is pulled again whenever an instance is created.
+
+## Upgrading instances from GenesisDB 1.x
+
+Instances created by orchestrator releases before GenesisDB 2.0 run a 1.x image and keep their data at `/data`. The current orchestrator detects such an instance and asks you to recreate it instead of showing an HTTP 404. Move the data over in four steps:
+
+1. Export a backup with `e` in the dashboard. Export still works for 1.x instances.
+2. Delete the instance with `d`.
+3. Create it again with `c` under the same name and a token of at least 32 bytes (`openssl rand -hex 32`).
+4. Restore the backup with `i`. Every 1.x backup restores into GenesisDB 2.0.
+
+Keep the exported backup until the new instance shows all events. Deleting an instance removes its data volume permanently.
+
 ## Requirements
 
 - Docker Desktop or Docker Engine
